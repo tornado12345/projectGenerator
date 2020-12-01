@@ -66,7 +66,8 @@ public:
 	virtual void addDefine(std::string define, LibType libType = RELEASE_LIB) {}
 
     virtual void addAddon(std::string addon);
-	virtual void addAddon(ofAddon & addon);
+    virtual void addAddon(ofAddon & addon);
+    virtual void addSrcRecursively(std::string srcPath);
 
     std::string getName() { return projectName;}
     std::string getPath() { return projectDir; }
@@ -87,6 +88,11 @@ protected:
     void recursiveCopyContents(const ofDirectory & srcDir, ofDirectory & destDir);
 
     std::vector<ofAddon> addons;
+    std::vector<std::string> extSrcPaths;
+
+    //cached addons - if an addon is requested more than once, avoid loading from disk as it's quite slow
+    std::map<std::string,std::map<std::string, ofAddon>> addonsCache; //indexed by [platform][supplied path]
+    bool isAddonInCache(const std::string & addonPath, const std::string platform); //is this addon in the mem cache?
 };
 
 

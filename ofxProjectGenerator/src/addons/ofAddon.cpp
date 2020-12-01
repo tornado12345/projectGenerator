@@ -138,7 +138,7 @@ bool ofAddon::checkCorrectVariable(string variable, ConfigParseState state){
 				variable == "ADDON_FRAMEWORKS" ||
 				variable == "ADDON_SOURCES" || variable == "ADDON_OBJC_SOURCES" || variable == "ADDON_CPP_SOURCES" || variable == "ADDON_HEADER_SOURCES" ||
 				variable == "ADDON_DATA" ||
-				variable == "ADDON_LIBS_EXCLUDE" || variable == "ADDON_SOURCES_EXCLUDE" || variable == "ADDON_INCLUDES_EXCLUDE" ||
+				variable == "ADDON_LIBS_EXCLUDE" || variable == "ADDON_SOURCES_EXCLUDE" || variable == "ADDON_INCLUDES_EXCLUDE" || variable == "ADDON_FRAMEWORKS_EXCLUDE" ||
 				variable == "ADDON_DLLS_TO_COPY" ||
 				variable == "ADDON_DEFINES");
 	case Unknown:
@@ -310,7 +310,7 @@ void ofAddon::parseVariableValue(string variable, string value, bool addToValue,
 	}
 
 	if(variable == "ADDON_DATA"){
-		addReplaceStringVector(data,value,addonRelPath,addToValue);
+		addReplaceStringVector(data,value,"",addToValue);
 	}
 
 	if(variable == "ADDON_LIBS_EXCLUDE"){
@@ -323,6 +323,10 @@ void ofAddon::parseVariableValue(string variable, string value, bool addToValue,
 
 	if(variable == "ADDON_INCLUDES_EXCLUDE"){
 		addReplaceStringVector(excludeIncludes,value,"",addToValue);
+	}
+
+	if (variable == "ADDON_FRAMEWORKS_EXCLUDE") {
+		addReplaceStringVector(excludeFrameworks, value, "", addToValue);
 	}
 
 	if (variable == "ADDON_DEFINES") {
@@ -433,6 +437,7 @@ void ofAddon::parseConfig(){
 	exclude(objcsrcFiles,excludeSources);
 	exclude(headersrcFiles,excludeSources);
 	exclude(propsFiles, excludeSources);
+	exclude(frameworks, excludeFrameworks);
 	exclude(libs,excludeLibs);
 
 	ofLogVerbose("ofAddon") << "libs after exclusions " << libs.size();
@@ -441,7 +446,7 @@ void ofAddon::parseConfig(){
 	}
 }
 
-void ofAddon::fromFS(string path, string platform){
+bool ofAddon::fromFS(std::string path, const std::string & platform){
     clear();
     this->platform = platform;
 	string prefixPath;
@@ -459,6 +464,9 @@ void ofAddon::fromFS(string path, string platform){
         prefixPath = pathToOF;
     }
 
+	if(!ofDirectory::doesDirectoryExist(path)){
+		return false;
+	}
 
     string srcPath = ofFilePath::join(path, "/src");
     ofLogVerbose() << "in fromFS, trying src " << srcPath;
@@ -643,6 +651,7 @@ void ofAddon::fromFS(string path, string platform){
 
     parseConfig();
 
+	return true;
 }
 
 //void ofAddon::fromXML(string installXmlName){

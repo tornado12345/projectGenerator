@@ -12,7 +12,7 @@
     "url": "openframeworks.cc"
   },
   "engines": {
-    "node": ">=0.10.0"
+    "node": ">=6.11.0"
   },
   "scripts": {
     "start": "electron .",
@@ -33,7 +33,8 @@
   "dependencies": {
     "electron-debug": "^0.1.1",
     "moniker": "^0.1.2",
-    "walk": "^2.3.9"
+    "walk": "^2.3.9",
+    "n-readlines": "^1.0.0"
   },
   "devDependencies": {
     "electron-packager": "^5.0.0",

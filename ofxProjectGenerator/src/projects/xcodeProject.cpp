@@ -218,6 +218,7 @@ STRINGIFY(
 xcodeProject::xcodeProject(std::string target)
 :baseProject(target){
     if( target == "osx" ){
+        projRootUUID    = "E4B69B4A0A3A1720003C02F2";
         srcUUID         = "E4B69E1C0A3A1BDC003C02F2";
         addonUUID       = "BB4B014C10F69532006C3DED";
         localAddonUUID  = "6948EE371B920CB800B5AC1A";
@@ -229,6 +230,7 @@ xcodeProject::xcodeProject(std::string target)
         frameworksBuildPhaseUUID = "E4328149138ABC9F0047C5CB";
         
     }else{
+        projRootUUID    = "29B97314FDCFA39411CA2CEA";
         srcUUID         = "E4D8936A11527B74007E1F53";
         addonUUID       = "BB16F26B0F2B646B00518274";
         localAddonUUID  = "6948EE371B920CB800B5AC1A";
@@ -875,8 +877,8 @@ void xcodeProject::addSrc(std::string srcFile, std::string folder, SrcType type)
 
         std::vector < std::string > folders = ofSplitString(folder, "/", true);
 
-        if (folders.size() > 1){
-            if (folders[0] == "src"){
+        if (folders.size()){
+            if (folders.size() > 1 && folders[0] == "src"){
                 std::string xmlStr = "//key[contains(.,'"+srcUUID+"')]/following-sibling::node()[1]";
 
                 folders.erase(folders.begin());
@@ -884,7 +886,7 @@ void xcodeProject::addSrc(std::string srcFile, std::string folder, SrcType type)
                 pugi::xml_node nodeToAddTo = findOrMakeFolderSet( node, folders, "src");
                 nodeToAddTo.child("array").append_child("string").append_child(pugi::node_pcdata).set_value(UUID.c_str());
 
-            } else if (folders[0] == "addons"){
+            } else if (folders.size() > 1 && folders[0] == "addons"){
                 std::string xmlStr = "//key[contains(.,'"+addonUUID+"')]/following-sibling::node()[1]";
 
                 folders.erase(folders.begin());
@@ -893,7 +895,7 @@ void xcodeProject::addSrc(std::string srcFile, std::string folder, SrcType type)
 
                 nodeToAddTo.child("array").append_child("string").append_child(pugi::node_pcdata).set_value(UUID.c_str());
 
-            } else if (folders[0] == "local_addons"){
+            } else if (folders.size() > 1 && folders[0] == "local_addons"){
                 std::string xmlStr = "//key[contains(.,'"+localAddonUUID+"')]/following-sibling::node()[1]";
 
                 folders.erase(folders.begin());
@@ -903,13 +905,15 @@ void xcodeProject::addSrc(std::string srcFile, std::string folder, SrcType type)
                 nodeToAddTo.child("array").append_child("string").append_child(pugi::node_pcdata).set_value(UUID.c_str());
 
             } else {
-                std::string xmlStr = "//key[contains(.,'"+srcUUID+"')]/following-sibling::node()[1]";
+                std::string xmlStr = "//key[contains(.,'"+projRootUUID+"')]/following-sibling::node()[1]";
 
                 pugi::xml_node node = doc.select_single_node(xmlStr.c_str()).node();
+                pugi::xml_node nodeToAddTo = findOrMakeFolderSet( node, folders, folders[0]);
+                
+                nodeToAddTo.child("array").append_child("string").append_child(pugi::node_pcdata).set_value(UUID.c_str());
 
-                // I'm not sure the best way to proceed;
-                // we should maybe find the rootest level and add it there.
-                // TODO: fix this.
+                // This should add any files not in src/ addons/ or local_addons/
+                // to the root of the project hierarchy
             }
         };
 
@@ -1219,12 +1223,27 @@ void xcodeProject::addCPPFLAG(std::string cppflag, LibType libType){
 }
 
 void xcodeProject::addAddon(ofAddon & addon){
-	ofLogNotice() << "adding addon " << addon.name;
     for(int i=0;i<(int)addons.size();i++){
-		if(addons[i].name==addon.name) return;
+        if(addons[i].name==addon.name){
+            return;
+		}
 	}
 
-	addons.push_back(addon);
+    for(int i=0;i<addon.dependencies.size();i++){
+        baseProject::addAddon(addon.dependencies[i]);
+    }
+
+	for(int i=0;i<addon.dependencies.size();i++){
+		for(int j=0;j<(int)addons.size();j++){
+			if(addon.dependencies[i] != addons[j].name){ //make sure dependencies of addons arent already added to prj
+				baseProject::addAddon(addon.dependencies[i]);
+			}else{
+				//trying to add duplicated addon dependency... skipping!
+			}
+		}
+	}
+    ofLogNotice() << "adding addon: " << addon.name;
+    addons.push_back(addon);
 
     for(int i=0;i<(int)addon.includePaths.size();i++){
         ofLogVerbose() << "adding addon include path: " << addon.includePaths[i];
@@ -1252,7 +1271,7 @@ void xcodeProject::addAddon(ofAddon & addon){
         addSrc(addon.srcFiles[i],addon.filesToFolders[addon.srcFiles[i]]);
     }
 	for(int i=0;i<(int)addon.defines.size(); i++){
-		ofLogVerbose() << "adding addon defines: " << addon.srcFiles[i];
+		ofLogVerbose() << "adding addon defines: " << addon.defines[i];
 		addDefine(addon.defines[i]);
 	}
 
@@ -1285,9 +1304,5 @@ void xcodeProject::addAddon(ofAddon & addon){
                              addon.filesToFolders[addon.frameworks[i]]);
             }
         }
-                                                                                            
-                                                                                            //
-            
     }
-    
 }

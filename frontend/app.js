@@ -8,6 +8,7 @@ var fs = require('fs');
 
 
 var platforms;
+var templates;
 
 // var platforms = {
 //     "osx": "OS X (Xcode)",
@@ -27,7 +28,7 @@ var isFirstTimeSierra = false;
 var bVerbose = false;
 var localAddons = [];
 
-
+var numAddedSrcPaths = 1;
 
 //-----------------------------------------------------------------------------------
 // IPC
@@ -92,6 +93,12 @@ ipc.on('setProjectPath', function(arg) {
 });
 
 //-------------------------------------------
+ipc.on('setSourceExtraPath', function(arg, index) {
+    checkAddSourcePath(index);
+    $("#sourceExtra-"+index).val(arg);
+});
+
+//-------------------------------------------
 ipc.on('setGenerateMode', function(arg) {
     switchGenerateMode(arg);
 });
@@ -149,7 +156,7 @@ ipc.on('setAddons', function(arg) {
   $('#addonsDropdown')
         .dropdown({
             allowAdditions: false,
-            fullTextSearch: false,
+            fullTextSearch: 'exact',
             match: "text"
         });
 });
@@ -204,9 +211,83 @@ ipc.on('setPlatforms', function(arg) {
 });
 
 
+ipc.on('setTemplates', function(arg) {
+    console.log("----------------");
+    console.log("got set templates");
+    console.log(arg);
+
+    templates = arg;
+
+    var select = document.getElementById("templateList");
+    var option, i;
+    for (var i in templates) {
+        console.log(i);
+        var myClass = 'template';
+
+        $('<div/>', {
+            "class": 'item',
+            "data-value": i
+        }).html(templates[i]).appendTo(select);
+    }
+
+    console.log(select);
+
+    // start the template drop down.
+    $('#templatesDropdown')
+    .dropdown({
+        allowAdditions: false,
+        fullTextSearch: 'exact',
+        match: "text",
+        maxSelections: 1
+    });
+
+    // // set the template to default
+    //$('#templatesDropdown').dropdown('set exactly', defaultSettings['defaultTemplate']);
+
+    // Multi
+    var select = document.getElementById("templateListMulti");
+    var option, i;
+    for (var i in templates) {
+        var myClass = 'template';
+
+        $('<div/>', {
+            "class": 'item',
+            "data-value": i
+        }).html(templates[i]).appendTo(select);        
+    }
+
+    // start the platform drop down.
+    $('#templatesDropdownMulti')
+        .dropdown({
+            allowAdditions: false,
+            maxSelections: 1
+        });
+
+    // // set the template to default
+    //$('#templatesDropdownMulti').dropdown('set exactly', defaultSettings['defaultTemplate']);
+});
 
 
+ipc.on('enableTemplate', function (arg) {
 
+    console.log('enableTemplate');
+    let items = arg.bMulti === false ? $('#templatesDropdown .menu .item') : $('#templatesDropdownMulti .menu .item');
+
+    // enable all first
+    for (let i = 0; i < items.length; i++) {
+        let item = $(items[i]);
+        item.removeClass("disabled");
+    }
+
+    for (let template of arg.invalidTemplateList) {
+        for (let i = 0; i < items.length; i++) {
+            let item = $(items[i]);
+            if (item.attr('data-value') === template) {
+                item.addClass("disabled");
+            }
+        }
+    }
+});
 
 //-------------------------------------------
 // select the list of addons and notify if some aren't installed
@@ -537,7 +618,7 @@ function setup() {
                 //var sys = require('sys')
                 var exec = require('child_process').exec;
                 function puts(error, stdout, stderr) { console.log(stdout + " " + stderr) }
-                exec("xattr -d com.apple.quarantine " + ofpath + "/projectGenerator-osx/projectGenerator.app", puts);
+                exec("xattr -r -d com.apple.quarantine " + ofpath + "/projectGenerator-osx/projectGenerator.app", puts);
                 $("#projectPath").val(ofpath + "/apps/myApps").trigger('change');
 
             }
@@ -606,6 +687,7 @@ function setup() {
 
         // show default platform in GUI
         $("#defaultPlatform").html(defaultSettings['defaultPlatform']);
+        //$("#defaultTemplate").html(defaultSettings['defaultTemplate']);
 
         // Enable tooltips
         //$("[data-toggle='tooltip']").tooltip();
@@ -653,6 +735,29 @@ function setup() {
         $("#dropZoneUpdate").on('dragenter dragover drop', onDragUpdateFile).on('dragleave', function(e){
             $(this).removeClass("accept deny");
         });
+
+
+        // reflesh template dropdown list depends on selected platforms
+        $("#platformsDropdown").on('change', function () {
+            let selectedPlatforms = $("#platformsDropdown input").val();
+            let selectedPlatformArray = selectedPlatforms.trim().split(',');
+            let arg = {
+                ofPath: $("#ofPath").val(),
+                selectedPlatforms: selectedPlatformArray,
+                bMulti: false
+            }
+            ipc.send('refreshTemplateList', arg);
+        })
+        $("#platformsDropdownMulti").on('change', function () {
+            let selectedPlatforms = $("#platformsDropdownMulti input").val();
+            let selectedPlatformArray = selectedPlatforms.trim().split(',');
+            let arg = {
+                ofPath: $("#ofPath").val(),
+                selectedPlatforms: selectedPlatformArray,
+                bMulti: true
+            }
+            ipc.send('refreshTemplateList', arg);
+        })
 
     });
 }
@@ -723,8 +828,9 @@ function onDropFile( e ){
             var files = e.originalEvent.dataTransfer.files;
             // import single project folder
             $("#projectName").val( files[0].name );
-            var regExp = new RegExp("\\b/"+files[0].name+"\\b","gi");
-            $("#projectPath").val( files[0].path.replace(regExp,"") ).triggerHandler('change');
+            var projectFullPath = files[0].path;
+            var projectParentPath = path.normalize(projectFullPath+'/..');            
+            $("#projectPath").val( projectParentPath ).triggerHandler('change');
 
             $("createMenuButon").triggerHandler('click');
         }
@@ -796,6 +902,12 @@ function generate() {
     // let's get all the info:
     var platformValueArray = getPlatformList();
 
+    var templatePicked = $("#templatesDropdown .active");
+    var templateValueArray = [];
+    for (var i = 0; i < templatePicked.length; i++){
+        templateValueArray.push($(templatePicked[i]).attr("data-value"));
+    }
+
     var addonsPicked = $("#addonsDropdown  .active");
     var addonValueArray = [];
 
@@ -808,13 +920,25 @@ function generate() {
         addonValueArray.push(localAddons[i]);
     }
 
+    // extra source locations
+    var srcExtraArr = "";
+    for(var i = 0; i < numAddedSrcPaths; i++){
+        var srcExtra = $("#sourceExtra-"+i).val();
+        if( srcExtra != '' ){
+            srcExtraArr += ", " + srcExtra;
+        }
+    }
+    
+
     var lengthOfPlatforms = platformValueArray.length;
 
     var gen = {};
 
     gen['projectName'] = $("#projectName").val();
     gen['projectPath'] = $("#projectPath").val();
+    gen['sourcePath'] = srcExtraArr;
     gen['platformList'] = platformValueArray;
+    gen['templateList'] = templateValueArray;
     gen['addonList'] = addonValueArray; //$("#addonsDropdown").val();
     gen['ofPath'] = $("#ofPath").val();
     gen['verbose'] = bVerbose;
@@ -849,11 +973,16 @@ function updateRecursive() {
         platformValueArray.push($(platformsPicked[i]).attr("data-value"));
     }
 
-
+    var templatePicked = $("#templatesDropdownMulti .active");
+    var templateValueArray = [];
+    for (var i = 0; i < templatePicked.length; i++){
+        templateValueArray.push($(templatePicked[i]).attr("data-value"));
+    }
 
     var gen = {};
     gen['updatePath'] = $("#updateMultiplePath").val();
     gen['platformList'] = platformValueArray;
+    gen['templateList'] = templateValueArray;
     gen['updateRecursive'] = true;
     gen['ofPath'] = $("#ofPath").val();
     gen['verbose'] = bVerbose;
@@ -885,12 +1014,16 @@ function switchGenerateMode(mode) {
         console.log('Switching GenerateMode to Update...');
 
         clearAddonSelection();
+        clearExtraSourceList();
 
     }
     // [default]: switch to createMode (generate new projects)
     else {
         // if previously in update mode, deselect Addons
-        if( $("#updateButton").is(":visible") ){ clearAddonSelection(); }
+        if( $("#updateButton").is(":visible") ){
+            clearAddonSelection();
+            clearExtraSourceList();
+        }
 
         $("#generateButton").show();
         $("#updateButton").hide();
@@ -920,10 +1053,18 @@ function enableAdvancedMode(isAdvanced) {
         $('#platformsDropdown').removeClass("disabled");
         $("body").addClass('advanced');
         $('a.updateMultiMenuOption').show();
+        $('#sourceExtraSection').show();
+        $('#templateSection').show();
+        $('#templateSectionMulti').show();
 
     } else {
         $('#platformsDropdown').addClass("disabled");
         $('#platformsDropdown').dropdown('set exactly', defaultSettings['defaultPlatform']);
+        $('#sourceExtraSection').hide();
+        $('#templateSection').hide();
+        $('#templateSectionMulti').hide();
+        $('#templateDropdown').dropdown('set exactly', '');
+        $('#templateDropdownMulti').dropdown('set exactly', '');
 
         $("body").removeClass('advanced');
         $('a.updateMultiMenuOption').hide();
@@ -994,13 +1135,43 @@ function browseOfPath() {
 }
 
 function browseProjectPath() {
-
     var path = $("#projectPath").val();
     if (path === ''){
         path = $("#ofPath").val();
     }
     ipc.send('pickProjectPath', path); // current path could go here
 }
+
+function clearExtraSourceList(){
+    $("#sourceExtraSection").empty();
+    $("#sourceExtraSection").append("<label>Additional source folders:</label>");
+    
+    checkAddSourcePath(-1);
+    numAddedSrcPaths = 1;
+}
+
+function checkAddSourcePath(index){
+    //if we don't have another field below us - add one
+    var nextFieldId = '#sourceExtra-'+(index+1);
+    if( $(nextFieldId).length == 0 ){
+        var nextIndex = index+1;
+        var extrafield = '<div class="field"> \
+           <div class="ui icon input fluid"> \
+               <input type="text" placeholder="Extra source path..." id="sourceExtra-'+nextIndex+'"> \
+               <i class="search link icon" onclick="browseSourcePath('+nextIndex+')"></i> \
+           </div> \
+        </div>';
+
+        $("#sourceExtraSection").append(extrafield);
+        numAddedSrcPaths++;
+    }
+}
+
+function browseSourcePath(index) {
+    var path = $("#ofPath").val();
+    ipc.send('pickSourcePath', path, index); // current path could go here
+}
+
 
 function browseImportProject() {
     var path = $("#projectPath").val();

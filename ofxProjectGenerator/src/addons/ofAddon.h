@@ -18,7 +18,7 @@ public:
 	
     ofAddon();
     
-	void fromFS(std::string path, std::string platform);
+	bool fromFS(std::string path, const std::string & platform);
 //	void fromXML(std::string installXmlName);
 	void clear();
 
@@ -100,6 +100,7 @@ private:
     std::vector<std::string> excludeLibs;
     std::vector<std::string> excludeSources;
     std::vector<std::string> excludeIncludes;
+	std::vector<std::string> excludeFrameworks;
 };
 
 #endif /* OFADDON_H_ */
